@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials
+.aws/
+
+# Local datasets and databases
+data/raw/
+data/processed/
+data/rejected/
+data/*.db
+data/*.sqlite
+*.sqlite3
+
+# Logs and generated reports
+logs/
+reports/*.json
+reports/*.log
+
+# Athena query results and temporary files
+athena-results/
+*.tmp
+# Incoming retail data
+data/incoming/
+data/incoming/
