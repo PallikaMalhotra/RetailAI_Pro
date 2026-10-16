@@ -1,6 +1,4 @@
-import pypandoc
-
-readme = r"""# RetailAI — Retail Data Engineering & Analytics Pipeline
+ RetailAI — Retail Data Engineering & Analytics Pipeline
 
 RetailAI is an end-to-end retail data engineering project that transforms raw retail transactions into clean, validated data for analytics. It combines Python ETL, automated data quality checks, SQLite, Amazon S3, Amazon Athena, GitHub Actions, a dimensional star schema, Prefect orchestration, and partitioned Parquet analytics.
 
