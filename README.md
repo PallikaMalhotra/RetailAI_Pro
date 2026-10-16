@@ -1,6 +1,8 @@
-# RetailAI — Retail Data Engineering & Analytics Pipeline
+import pypandoc
 
-RetailAI is an end-to-end retail data engineering project that transforms raw retail transactions into clean, validated data for analytics. It combines Python-based ETL, data quality checks, SQLite, Amazon S3, and Amazon Athena to demonstrate a practical data pipeline.
+readme = r"""# RetailAI — Retail Data Engineering & Analytics Pipeline
+
+RetailAI is an end-to-end retail data engineering project that transforms raw retail transactions into clean, validated data for analytics. It combines Python ETL, automated data quality checks, SQLite, Amazon S3, Amazon Athena, GitHub Actions, a dimensional star schema, Prefect orchestration, and partitioned Parquet analytics.
 
 ## Project Overview
 
@@ -17,8 +19,12 @@ RetailAI demonstrates this workflow using the UCI Online Retail dataset.
 - SQL-based retail revenue analysis.
 - Cloud storage using Amazon S3.
 - Serverless SQL analytics using Amazon Athena.
-- SQLite query benchmarking and index performance testing.
-- Pipeline execution monitoring and validation reports.
+- Partitioned Parquet data by year and month.
+- Athena scan-size comparison for partitioned and unpartitioned queries.
+- Dimensional star schema with fact and dimension tables.
+- Automated tests with pytest and GitHub Actions.
+- Local workflow orchestration using Prefect.
+- SQLite query benchmarking, pipeline monitoring, and validation reports.
 
 ## Technology Stack
 
@@ -26,11 +32,14 @@ RetailAI demonstrates this workflow using the UCI Online Retail dataset.
 |---|---|
 | Python | ETL, validation, automation, and benchmarking |
 | Pandas | Data cleaning and transformation |
+| Pytest | Automated data and schema tests |
 | Parquet | Columnar data storage |
-| SQLite | Local analytical database |
+| SQLite | Local analytical database and star schema |
 | SQL | Data analysis and aggregation |
 | Amazon S3 | Cloud object storage |
 | Amazon Athena | Serverless SQL queries on S3 data |
+| GitHub Actions | Automated CI workflow |
+| Prefect | Local workflow orchestration |
 | PowerShell | Running scripts on Windows |
 | Git | Version control |
 
@@ -40,26 +49,30 @@ RetailAI demonstrates this workflow using the UCI Online Retail dataset.
 UCI Online Retail Dataset
           |
           v
-   Raw Excel Dataset
+     Raw Excel Dataset
           |
           v
-   Python ETL Pipeline
+     Python ETL Pipeline
           |
-          +--------------------+
-          |                    |
-          v                    v
-   Cleaned CSV/Parquet    Rejected Records
+          +----------------------+
+          |                      |
+          v                      v
+   Clean CSV/Parquet       Rejected Records
           |
           v
    Data Quality Tests
           |
           v
-   SQLite Database
+      SQLite Database
+          |
+          +----------------------+
+          |                      |
+          v                      v
+   SQL Analytics          Dimensional Star Schema
           |
           v
-   SQL Analytics & Benchmarking
-
-   Cleaned Parquet Dataset
+   Partitioned Parquet
+   (year/month folders)
           |
           v
        Amazon S3
@@ -68,13 +81,12 @@ UCI Online Retail Dataset
       Amazon Athena
           |
           v
-   Cloud SQL Analytics
+  Cloud SQL Analytics
 ```
 
 ## Dataset
 
-**Source:** UCI Machine Learning Repository — Online Retail
-
+**Source:** UCI Machine Learning Repository — Online Retail  
 Dataset: https://archive.ics.uci.edu/dataset/352/online+retail
 
 The dataset contains retail transactions from a UK-based online retailer between 2010 and 2011.
@@ -108,18 +120,16 @@ The ETL process reads the source Excel dataset and performs the following operat
 
 **Main script:** `src/retail_etl.py`
 
-### 2. Data Quality Validation
+### 2. Data Quality Validation and CI
 
-The validation script checks:
+The data quality checks cover output-file availability, required columns, duplicate records, quantity and unit-price rules, revenue calculations, and reconciliation of accepted and rejected records.
 
-- Whether the expected output files exist.
-- Whether required columns are present.
-- Whether duplicate records remain.
-- Whether quantity and unit price satisfy the defined rules.
-- Whether revenue calculations are correct.
-- Whether accepted and rejected records reconcile with the input.
+- The local data quality tests are run with pytest.
+- GitHub Actions runs the automated workflow on GitHub, including ETL, quality tests, database loading, star-schema creation, and star-schema tests.
+- The latest workflow run reported by the project owner completed successfully.
 
-**Main script:** `src/test_retail_quality.py`
+**Main test files:** `src/test_retail_quality.py`, `src/test_star_schema.py`  
+**Workflow:** `.github/workflows/tests.yml`
 
 ### 3. SQLite Database
 
@@ -129,13 +139,33 @@ The cleaned data is loaded into a local SQLite database for analytical queries.
 - Table: `retail_transactions`
 - Records loaded: 536,639
 
-The current full-load script rebuilds the table contents during each run.
+The standard full-load script rebuilds the table contents during each run. An additional incremental-loading script is available at `src/incremental_retail_load.py`; it is not integrated into the main local orchestrator.
 
 **Main script:** `src/load_retail_database.py`
 
-An additional incremental-loading script is available at `src/incremental_retail_load.py`. It is not currently integrated into the main pipeline orchestrator.
+### 4. Dimensional Star Schema
 
-### 4. SQL Analytics
+A dimensional model was created for analytical reporting. It contains:
+
+- `FactSales` — transaction-level sales measures and dimension keys.
+- `DimProduct` — product attributes.
+- `DimCustomer` — customer and country attributes.
+- `DimDate` — date, year, month, and day attributes.
+
+Observed row counts from the local build:
+
+| Table | Rows |
+|---|---:|
+| `DimProduct` | 5,749 |
+| `DimCustomer` | 4,380 |
+| `DimDate` | 305 |
+| `FactSales` | 536,639 |
+
+The fact table row count matched the 536,639 cleaned source records in the observed run. Five star-schema tests passed in the local test run reported by the project owner.
+
+**Files:** `sql/star_schema.sql`, `src/build_star_schema.py`, `src/test_star_schema.py`
+
+### 5. SQL Analytics
 
 SQL queries can be used to explore revenue by country, product, and other business dimensions.
 
@@ -151,48 +181,64 @@ ORDER BY total_revenue DESC
 LIMIT 10;
 ```
 
-Note: This query includes all rows in the table, including cancellation records. For sales-only analysis, apply the appropriate cancellation filter.
+This query includes all rows in the table, including cancellation records. For sales-only analysis, apply the appropriate cancellation filter.
 
-### 5. Amazon S3
+Additional analytical queries are maintained in `sql/analytics.sql` where available.
+
+### 6. Amazon S3
 
 The cleaned Parquet dataset is stored in Amazon S3 for cloud-based analytics.
 
-Configured dataset location:
+**Unpartitioned dataset:**
 
 `s3://retailai-data-847291/processed/online_retail_clean.parquet`
 
-S3 stores the processed data as an object, allowing analytical tools to access it without maintaining a traditional database server.
+**Partitioned dataset prefix:**
 
-### 6. Amazon Athena
+`s3://retailai-data-847291/partitioned/`
 
-Athena is configured to query the Parquet dataset stored in S3.
+The partitioned output is organized by `year` and `month`, allowing queries with matching partition filters to read only relevant partitions.
 
-Database: `retailai`
+### 7. Amazon Athena
 
-Table: `online_retail`
+Athena is configured to query Parquet datasets stored in S3.
 
-Example: count the records available through Athena.
+- Database: `retailai`
+- Original table: `online_retail`
+- Partitioned table: `online_retail_partitioned`
 
-```sql
-SELECT COUNT(*) AS total_rows
-FROM retailai.online_retail;
-```
+The partitioned table uses `year` and `month` partition columns. Partition metadata was registered in Athena, and a December 2010 query was run against both tables.
 
-Example: calculate revenue by country.
+#### Partitioning benchmark: December 2010
+
+Both queries returned the same results, validating that the partitioned query preserved the result for this time range.
+
+| Metric | Original table | Partitioned table |
+|---|---:|---:|
+| Transaction count | 41,981 | 41,981 |
+| Total revenue | 746,723.61 | 746,723.61 |
+| Data scanned | 1.27 MB | 87.20 KB |
+
+This observed comparison represents approximately **93.3% less data scanned** for the partitioned query. The result applies to the tested December 2010 query and is not a guarantee for every query. To benefit from partition pruning, include partition filters such as `year = 2010 AND month = 12`.
+
+Example partitioned query:
 
 ```sql
 SELECT
-    country,
+    COUNT(*) AS transaction_count,
     ROUND(SUM(revenue), 2) AS total_revenue
-FROM retailai.online_retail
-GROUP BY country
-ORDER BY total_revenue DESC
-LIMIT 10;
+FROM retailai.online_retail_partitioned
+WHERE year = 2010
+  AND month = 12
+  AND invoicedate >= TIMESTAMP '2010-12-01 00:00:00'
+  AND invoicedate < TIMESTAMP '2011-01-01 00:00:00';
 ```
 
-The Athena table is an external table. The underlying data remains stored in S3.
+Athena tables are external tables; the underlying data remains stored in S3.
 
 ## Pipeline Orchestration
+
+### Standard local orchestrator
 
 The main orchestration script runs the local workflow in sequence and stops when a step fails.
 
@@ -206,36 +252,51 @@ Current sequence:
 4. `verify_retail_database.py`
 5. `pipeline_monitor.py`
 
-Run the pipeline with:
+Run it with:
 
 ```powershell
 py src/run_pipeline.py
 ```
 
-The current orchestrator performs a full database reload rather than incremental loading.
+### Prefect flow
+
+A separate Prefect flow was also run successfully in the local environment. It invokes the ETL, quality-test, database-load, verification, and monitoring scripts as sequential tasks.
+
+**Main script:** `src/prefect_pipeline.py`
+
+Run it with:
+
+```powershell
+py src/prefect_pipeline.py
+```
+
+This demonstrates local orchestration; it is not described as a deployed or scheduled Prefect service.
+
+Both orchestration paths currently use a full database reload rather than incremental loading. The Prefect flow does not currently include the star-schema build steps.
 
 ## Validation Results
 
-Observed results from the local environment:
+Observed results from local runs:
 
 | Metric | Result |
 |---|---:|
 | Cleaned records loaded into SQLite | 536,639 |
 | Unique transaction IDs | 536,639 |
 | Null transaction IDs | 0 |
-| Data quality test script | Passed |
-| Pipeline execution | Successful |
-| Latest previously recorded pipeline duration | 53.21 seconds |
+| Data quality tests | 6 passed |
+| Star-schema tests | 5 passed |
+| GitHub Actions workflow | Successful |
+| Prefect local flow | Completed successfully |
 
-Pipeline duration varies with the local machine, filesystem, and execution conditions.
+Pipeline duration can vary with the local machine, filesystem, and execution conditions.
 
 ## Query Performance Benchmark
 
-### SQLite Index Benchmark
+### SQLite index benchmark
 
 The country-wise revenue query was benchmarked over five runs.
 
-| Metric | Observed Result |
+| Metric | Observed result |
 |---|---:|
 | Average runtime before country index | 160.02 ms |
 | Average runtime after country index | 176.54 ms |
@@ -245,20 +306,18 @@ The index did not improve performance in this observed test. The measured differ
 
 **Benchmark script:** `src/benchmark_queries.py`
 
-### SQLite and Athena Observations
+### SQLite and Athena observations
 
-One Athena country-wise revenue query completed with the following observed measurements:
+One Athena country-wise revenue query previously completed with these measurements:
 
-| Metric | Observed Result |
+| Metric | Observed result |
 |---|---:|
 | Query status | Completed |
 | Run time | 896 ms |
 | Time in queue | 74 ms |
 | Data scanned | 861.74 KB |
 
-The local SQLite comparison script reported an average runtime of 171.5 ms.
-
-These figures are observations, not a controlled performance comparison. SQLite's average runtime and Athena's single execution have different measurement conditions. Athena's runtime can include cloud execution overhead, and data scanned depends on the query and dataset layout.
+The local SQLite comparison script reported an average runtime of 171.5 ms. These are observations, not a controlled performance comparison: SQLite's average runtime and Athena's single execution have different measurement conditions.
 
 **Comparison script:** `src/compare_performance.py`
 
@@ -266,19 +325,20 @@ These figures are observations, not a controlled performance comparison. SQLite'
 
 ```text
 RetailAI_Pro/
+├── .github/
+│   └── workflows/
+│       └── tests.yml
 ├── data/
 │   ├── raw/
-│   │   └── Online Retail.xlsx
 │   ├── processed/
-│   │   ├── online_retail_clean.csv
-│   │   └── online_retail_clean.parquet
+│   ├── partitioned/
 │   ├── rejected/
-│   │   └── online_retail_rejected.csv
 │   └── online_retail.db
 ├── reports/
-│   └── online_retail_quality_report.json
+├── sql/
+│   ├── analytics.sql
+│   └── star_schema.sql
 ├── src/
-│   ├── inspect_dataset.py
 │   ├── retail_etl.py
 │   ├── test_retail_quality.py
 │   ├── load_retail_database.py
@@ -287,11 +347,16 @@ RetailAI_Pro/
 │   ├── pipeline_monitor.py
 │   ├── benchmark_queries.py
 │   ├── compare_performance.py
-│   └── run_pipeline.py
+│   ├── run_pipeline.py
+│   ├── prefect_pipeline.py
+│   ├── partition_retail_data.py
+│   ├── build_star_schema.py
+│   └── test_star_schema.py
+├── requirements.txt
 └── README.md
 ```
 
-The file tree shows the main files used in the workflow; additional starter files may also exist in the repository.
+The tree shows the principal project files. Actual local folders may contain additional generated data or helper scripts. Raw datasets, processed datasets, database files, and reports may be excluded from version control by `.gitignore`.
 
 ## Setup and Execution
 
@@ -304,22 +369,23 @@ The file tree shows the main files used in the workflow; additional starter file
 
 ### Install dependencies
 
-From the project root:
+From the project root, install the project's dependencies:
+
+```powershell
+py -m pip install -r requirements.txt
+```
+
+If you are setting up only the basic ETL components, the core packages include:
 
 ```powershell
 py -m pip install pandas openpyxl pyarrow
 ```
 
-### Run the ETL pipeline
+### Run ETL and data quality checks
 
 ```powershell
 py src/retail_etl.py
-```
-
-### Run data quality checks
-
-```powershell
-py src/test_retail_quality.py
+py -m pytest src/test_retail_quality.py -v
 ```
 
 ### Load and verify SQLite
@@ -329,17 +395,32 @@ py src/load_retail_database.py
 py src/verify_retail_database.py
 ```
 
-### Run pipeline monitoring
+### Build and test the star schema
 
 ```powershell
-py src/pipeline_monitor.py
+py src/build_star_schema.py
+py -m pytest src/test_star_schema.py -v
 ```
 
-### Run the complete local pipeline
+### Run the local pipeline
 
 ```powershell
 py src/run_pipeline.py
 ```
+
+### Run the Prefect flow
+
+```powershell
+py src/prefect_pipeline.py
+```
+
+### Create partitioned Parquet data
+
+```powershell
+py src/partition_retail_data.py
+```
+
+Upload the generated `data/partitioned/` contents to the configured S3 partition prefix before querying the partitioned Athena table.
 
 ### Run performance benchmarks
 
@@ -348,33 +429,33 @@ py src/benchmark_queries.py
 py src/compare_performance.py
 ```
 
-Run the complete pipeline only after checking that the input file and dependencies are available.
-
 ## AWS Cost and Data Management
 
 - Athena queries scan data stored in S3 and may incur charges.
-- Use Parquet and limit query scans where possible.
+- Use Parquet and partition filters to limit scans where possible.
 - Keep Athena query results in a dedicated S3 prefix.
 - Review AWS billing and usage regularly.
 - Do not upload AWS credentials, access keys, or secrets to GitHub.
-- Check the repository's `.gitignore` before publishing local datasets or database files.
+- Check `.gitignore` before publishing local datasets or database files.
 
 ## Current Limitations
 
-- The main orchestrator uses a full database reload, not an incremental load.
-- The incremental-loading script is separate from the main orchestrator.
+- The standard local orchestrator uses a full database reload, not an incremental load.
+- The incremental-loading script is separate from the main orchestrators.
 - The transaction ID is derived from source-row information and is not a universal business key.
 - The current performance measurements are environment-specific.
 - The S3 and Athena setup is configured separately from the local Python pipeline.
-- Automated CI tests, a dimensional star schema, workflow scheduling, and partitioned Parquet benchmarking are potential future enhancements.
+- The Prefect flow is a local run, not a deployed or scheduled service.
+- The Prefect flow does not currently build the star schema.
+- The 93.3% scan reduction was observed for the December 2010 query only.
 
 ## Future Improvements
 
-1. Add a proper automated test suite using `pytest`.
-2. Add GitHub Actions for continuous integration.
-3. Design a dimensional star schema for analytical reporting.
-4. Integrate a workflow orchestration tool such as Prefect or Airflow.
-5. Partition Parquet data by year and month and compare Athena scan sizes and costs.
+1. Integrate incremental loading into the main orchestrator.
+2. Add automated checks for partition registration and query-result parity.
+3. Add partitioned Athena benchmarks for more date ranges and query patterns.
+4. Deploy and schedule the Prefect flow if automated recurring execution is required.
+5. Add more analytical queries and document their business interpretation.
 
 ## Learning Outcomes
 
@@ -384,13 +465,21 @@ This project demonstrates practical experience with:
 - Data cleaning and validation.
 - CSV and Parquet data formats.
 - Local database loading and SQL analytics.
+- Dimensional modeling with fact and dimension tables.
 - Cloud object storage using Amazon S3.
 - Serverless analytics using Amazon Athena.
-- Query benchmarking and execution-plan inspection.
-- Pipeline monitoring and orchestration.
+- Automated testing and continuous integration.
+- Local workflow orchestration with Prefect.
+- Query benchmarking and partition-pruning analysis.
+- Pipeline monitoring.
 
 ## Acknowledgements
 
 The project uses the Online Retail dataset provided by the UCI Machine Learning Repository.
 
 Dataset page: https://archive.ics.uci.edu/dataset/352/online+retail
+"""
+
+output_path = "/mnt/data/README_RetailAI_Updated.md"
+pypandoc.convert_text(readme, "md", format="md", outputfile=output_path, extra_args=["--standalone"])
+print(f"Created updated README: {output_path}")
