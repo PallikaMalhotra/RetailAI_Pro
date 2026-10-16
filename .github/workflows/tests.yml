@@ -21,6 +21,13 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements.txt pytest
 
+      - name: Download UCI Online Retail dataset
+        run: |
+          mkdir -p data/raw
+          curl -fL "https://archive.ics.uci.edu/static/public/352/online+retail.zip" -o /tmp/online-retail.zip
+          python -c "import zipfile; z=zipfile.ZipFile('/tmp/online-retail.zip'); print(z.namelist()); z.extractall('data/raw')"
+          python -c "from pathlib import Path; p=list(Path('data/raw').rglob('*.xlsx')); print('Excel files:', p); assert p, 'No Excel file extracted'"
+
       - name: Generate cleaned dataset and quality report
         run: python src/retail_etl.py
 
