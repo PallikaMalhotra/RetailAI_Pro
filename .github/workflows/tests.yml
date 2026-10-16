@@ -33,3 +33,9 @@ jobs:
 
       - name: Run data quality tests
         run: python -m pytest src/test_retail_quality.py -v
+
+              - name: Build star schema
+        run: python src/build_star_schema.py
+
+      - name: Run star schema tests
+        run: python -m pytest src/test_star_schema.py -v
